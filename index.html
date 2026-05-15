@@ -116,30 +116,18 @@
 </head>
 <body>
 
-<div id="setup">
-  <div class="setup-icon">🌏</div>
-  <div class="setup-title">JA ↔ ID Translator</div>
-  <div class="setup-sub">Anthropic APIキーを入力してください<br>Masukkan API Key Anthropic Anda</div>
-  <div class="setup-label">Claude API Key</div>
-  <input type="password" id="apiKeyInput" class="setup-input"
-    placeholder="sk-ant-..." autocomplete="off" autocorrect="off" spellcheck="false">
-  <button class="setup-btn" onclick="saveApiKey()">開始 / Mulai</button>
-  <div class="setup-hint">
-    キーはこの端末のみに保存されます<br>
-    <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> で取得
-  </div>
-</div>
+<!-- no setup needed -->
 
-<div id="app" class="hidden">
+<div id="app">
   <div class="hdr">
     <div class="hdr-ico">🌏</div>
     <div>
       <div class="hdr-title">JA ↔ ID Translator</div>
-      <div class="hdr-sub">リアルタイム翻訳 / Terjemahan real-time</div>
+      <div class="hdr-sub">無料・APIキー不要 / Gratis tanpa API key</div>
     </div>
     <div class="hdr-right">
       <button class="auto-tts-btn" id="autoTtsBtn" onclick="toggleAutoTts()">🔊 自動読上</button>
-      <button class="settings-btn" onclick="resetApiKey()">⚙️</button>
+      
       <button class="clear-btn" onclick="clearAll()">クリア</button>
     </div>
   </div>
@@ -176,44 +164,22 @@
 </div>
 
 <script>
-let apiKey = localStorage.getItem('ja_id_apikey') || '';
 let side = 'ja';
 let busy = false;
 let autoTts = false;
 let activeTtsBtn = null;
 
-const langName  = {ja:'Japanese',  id:'Indonesian'};
 const langLabel = {ja:'🇯🇵 日本語', id:'🇮🇩 Indonesia'};
-const langColor = {ja:'#4ade80',   id:'#34d399'};
-const langBCP   = {ja:'ja-JP',     id:'id-ID'};
+const langColor  = {ja:'#4ade80',   id:'#34d399'};
+const langBCP    = {ja:'ja-JP',     id:'id-ID'};
+const mmLang     = {ja:'JA',        id:'ID'};
 
 function init() {
-  if (apiKey) {
-    document.getElementById('setup').classList.add('hidden');
-    document.getElementById('app').classList.remove('hidden');
-  }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }
-}
-
-function saveApiKey() {
-  const val = document.getElementById('apiKeyInput').value.trim();
-  if (!val.startsWith('sk-')) { alert('正しいAPIキーを入力してください (sk-ant-...)'); return; }
-  apiKey = val;
-  localStorage.setItem('ja_id_apikey', val);
-  document.getElementById('setup').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
-}
-function resetApiKey() {
-  if (!confirm('APIキーをリセットしますか？')) return;
-  localStorage.removeItem('ja_id_apikey');
-  apiKey = '';
-  document.getElementById('apiKeyInput').value = '';
-  document.getElementById('app').classList.add('hidden');
-  document.getElementById('setup').classList.remove('hidden');
 }
 
 function setSide(s) {
@@ -234,20 +200,17 @@ function toggleAutoTts() {
 }
 
 function speak(text, lang, btnEl) {
-  if (!window.speechSynthesis) { alert('このブラウザはTTS未対応です'); return; }
+  if (!window.speechSynthesis) { alert('TTS未対応ブラウザです'); return; }
   window.speechSynthesis.cancel();
   if (activeTtsBtn === btnEl) { activeTtsBtn = null; return; }
   if (activeTtsBtn) activeTtsBtn.classList.remove('speaking');
-
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = langBCP[lang];
   utter.rate = 0.92;
-
   const voices = window.speechSynthesis.getVoices();
   const prefix = langBCP[lang].split('-')[0];
   const match = voices.find(v => v.lang === langBCP[lang]) || voices.find(v => v.lang.startsWith(prefix));
   if (match) utter.voice = match;
-
   if (btnEl) {
     btnEl.classList.add('speaking');
     activeTtsBtn = btnEl;
@@ -282,25 +245,13 @@ async function send() {
   addPair(id, side, text, toLang);
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:1000,
-        messages:[{role:'user',
-          content:`Translate the following ${langName[side]} text to ${langName[toLang]}. Return ONLY the translation, no explanation, no quotes.\n\n${text}`
-        }]
-      })
-    });
+    const langpair = mmLang[side] + '|' + mmLang[toLang];
+    const url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) + '&langpair=' + langpair;
+    const res = await fetch(url);
     const data = await res.json();
-    if (data.error) throw new Error(JSON.stringify(data.error));
-    const translated = data.content?.[0]?.text?.trim() || '';
+    if (data.responseStatus !== 200) throw new Error('Status: ' + data.responseStatus + ' ' + (data.responseDetails || ''));
+    const translated = data.responseData?.translatedText || '';
+    if (!translated) throw new Error('翻訳結果が空です');
     updatePair(id, toLang, translated);
     if (autoTts && translated) {
       setTimeout(() => { const btn = document.getElementById('tts-'+id); speak(translated, toLang, btn); }, 300);
@@ -319,25 +270,25 @@ function addPair(id, from, original, to) {
   const msgs = document.getElementById('msgs');
   const pair = document.createElement('div');
   pair.className = 'pair ' + from;
-  pair.innerHTML = `
-    <div class="bubble b${from}">
+  pair.innerHTML = \`
+    <div class="bubble b\${from}">
       <div class="b-header">
-        <span class="b-lang" style="color:${langColor[from]}">${langLabel[from]}</span>
+        <span class="b-lang" style="color:\${langColor[from]}">\${langLabel[from]}</span>
       </div>
-      <div class="b-text">${esc(original)}</div>
+      <div class="b-text">\${esc(original)}</div>
     </div>
-    <div class="arrow">${from==='ja'?'↓ Indonesia':'↓ 日本語'}</div>
-    <div class="bubble b${to}">
+    <div class="arrow">\${from==='ja'?'↓ Indonesia':'↓ 日本語'}</div>
+    <div class="bubble b\${to}">
       <div class="b-header">
-        <span class="b-lang" style="color:${langColor[to]}">${langLabel[to]}</span>
-        <button class="tts-btn" id="tts-${id}" style="display:none"
-          data-lang="${to}" data-text=""
+        <span class="b-lang" style="color:\${langColor[to]}">\${langLabel[to]}</span>
+        <button class="tts-btn" id="tts-\${id}" style="display:none"
+          data-lang="\${to}" data-text=""
           onclick="speak(this.dataset.text,this.dataset.lang,this)">🔊</button>
       </div>
-      <div class="b-text" id="t${id}">
+      <div class="b-text" id="t\${id}">
         <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
       </div>
-    </div>`;
+    </div>\`;
   msgs.appendChild(pair);
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -354,11 +305,11 @@ function clearAll() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   activeTtsBtn = null;
   document.getElementById('msgs').innerHTML =
-    `<div class="empty" id="empty"><div class="empty-ico">🌏</div>
+    \`<div class="empty" id="empty"><div class="empty-ico">🌏</div>
     <div class="empty-txt">テキストを入力して翻訳<br>
       <span style="font-size:12px;color:#4b6b58">Ketik teks untuk menerjemahkan</span><br>
       <span style="font-size:11px;color:#3a5a46">🔊 翻訳後に読み上げボタンが出ます</span>
-    </div></div>`;
+    </div></div>\`;
 }
 
 function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
