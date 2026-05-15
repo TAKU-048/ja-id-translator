@@ -291,7 +291,7 @@ async function send() {
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
+        model:'claude-haiku-4-5-20251001',
         max_tokens:1000,
         messages:[{role:'user',
           content:`Translate the following ${langName[side]} text to ${langName[toLang]}. Return ONLY the translation, no explanation, no quotes.\n\n${text}`
@@ -299,7 +299,7 @@ async function send() {
       })
     });
     const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
+    if (data.error) throw new Error(JSON.stringify(data.error));
     const translated = data.content?.[0]?.text?.trim() || '';
     updatePair(id, toLang, translated);
     if (autoTts && translated) {
