@@ -175,7 +175,13 @@ const langBCP    = {ja:'ja-JP',     id:'id-ID'};
 const mmLang     = {ja:'JA',        id:'ID'};
 
 function init() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  // 古いService Workerを全解除してキャッシュをクリア
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(r => r.unregister());
+    });
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+  }
   if (window.speechSynthesis) {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
